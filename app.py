@@ -21,20 +21,29 @@ except Exception as e:
     st.error(f"Failed to load OCR engine: {e}")
     st.stop()
 
-# Sidebar for Upload
-st.sidebar.header("Upload Receipt")
-uploaded_file = st.sidebar.file_uploader("Choose an image...", type=["jpg", "png", "jpeg"])
+# Sidebar for Input
+st.sidebar.header("Input Method")
+input_method = st.sidebar.radio("Choose input:", ["Upload Image", "Use Camera"])
 
-if uploaded_file is not None:
-    # Display Image
-    image = Image.open(uploaded_file)
-    st.sidebar.image(image, caption="Uploaded Receipt", use_container_width=True)
+image_file = None
+
+if input_method == "Upload Image":
+    image_file = st.sidebar.file_uploader("Choose an image...", type=["jpg", "png", "jpeg"])
+elif input_method == "Use Camera":
+    image_file = st.sidebar.camera_input("Take a picture")
+
+if image_file is not None:
+    # Display Image based on source
+    # Camera input already shows the image in the widget, but we can show it again or just process
+    if input_method == "Upload Image":
+        image = Image.open(image_file)
+        st.sidebar.image(image, caption="Uploaded Receipt", use_container_width=True)
 
     # Convert to bytes for OCR
     # EasyOCR expects a file path or bytes/numpy array
     # We'll save it temporarily to disk to be safe with our existing class
     with open("temp_receipt.png", "wb") as f:
-        f.write(uploaded_file.getbuffer())
+        f.write(image_file.getbuffer())
 
     with st.spinner("Scanning..."):
         try:
