@@ -1,15 +1,48 @@
+import os
 import streamlit as st
 from PIL import Image
 import pandas as pd
 import io
 from ocr_demo import ReceiptScanner
 
-import os
-
 # --- Page Config ---
 st.set_page_config(page_title="Receipt Scanner", layout="wide")
 
 st.title("🧾 Receipt Scanner & Parser")
+
+# --- Authentication ---
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+if "username" not in st.session_state:
+    st.session_state.username = ""
+
+def login():
+    st.header("Log In")
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
+    
+    if st.button("Log In"):
+        if username and password: # Simple check: allow any non-empty credential for now
+            st.session_state.logged_in = True
+            st.session_state.username = username
+            st.rerun()
+        else:
+            st.error("Please enter a username and password.")
+
+def logout():
+    st.session_state.logged_in = False
+    st.session_state.username = ""
+    st.rerun()
+
+if not st.session_state.logged_in:
+    login()
+    st.stop() # Stop execution if not logged in
+
+# --- Sidebar ---
+st.sidebar.write(f"Logged in as: **{st.session_state.username}**")
+if st.sidebar.button("Log Out"):
+    logout()
+
 st.write("Upload a receipt image to extract structured data.")
 
 # --- Database Setup ---
@@ -18,13 +51,14 @@ DB_FILE = "receipts_db.csv"
 def load_db():
     if os.path.exists(DB_FILE):
         return pd.read_csv(DB_FILE)
-    return pd.DataFrame(columns=["Merchant", "Date", "Total", "Items"])
+    return pd.DataFrame(columns=["Username", "Merchant", "Date", "Total", "Items"])
 
-def save_to_db(merchant, date, total, items):
+def save_to_db(username, merchant, date, total, items):
     df = load_db()
-    # Flatten items to string for simple storage
+    # Flatten items to string
     items_str = "; ".join([f"{i['name']} ({i['price']})" for i in items])
     new_entry = pd.DataFrame([{
+        "Username": username,
         "Merchant": merchant,
         "Date": date,
         "Total": total,
@@ -126,6 +160,7 @@ if image_file is not None:
             with col_a:
                 if st.button("💾 Save to Database", type="primary"):
                     save_to_db(
+                        st.session_state.username,
                         results.get('merchant'),
                         results.get('date'),
                         results.get('total'),
@@ -138,18 +173,30 @@ else:
 
 # --- History Section ---
 st.markdown("---")
-st.subheader("📂 Receipt History")
+st.subheader(f"📂 Receipt History ({st.session_state.username})")
 
 if os.path.exists(DB_FILE):
     history_df = pd.read_csv(DB_FILE)
-    st.dataframe(history_df, use_container_width=True)
     
-    csv_bytes = history_df.to_csv(index=False).encode('utf-8')
-    st.download_button(
-        label="📥 Download All History (CSV)",
-        data=csv_bytes,
-        file_name="all_receipts.csv",
-        mime="text/csv",
-    )
+    # Filter by user if column exists
+    if "Username" in history_df.columns:
+        user_history = history_df[history_df["Username"] == st.session_state.username]
+    else:
+        # Backward compatibility for old DB (show nothing or everything? Better show nothing to stay safe)
+        st.warning("Database format is old. Showing empty history. New saves will be visible.")
+        user_history = pd.DataFrame()
+
+    if not user_history.empty:
+        st.dataframe(user_history, use_container_width=True)
+        
+        csv_bytes = user_history.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Download My History (CSV)",
+            data=csv_bytes,
+            file_name=f"receipts_{st.session_state.username}.csv",
+            mime="text/csv",
+        )
+    else:
+        st.write("No history found for this user.")
 else:
     st.write("No history yet.")
